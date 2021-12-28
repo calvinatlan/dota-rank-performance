@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v4"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net/http"
 	"os"
