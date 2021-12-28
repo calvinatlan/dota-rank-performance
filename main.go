@@ -26,7 +26,7 @@ func createConn() *sql.DB {
 }
 
 func insertPlayer(db *sql.DB, id string) {
-	insertPlayerSQL := "INSERT INTO player(playerId, createdDate) VALUES($1, $2)"
+	insertPlayerSQL := "INSERT INTO player(playerid, createddate) VALUES($1, $2)"
 	_, err := db.Exec(insertPlayerSQL, id, time.Now())
 
 	if err != nil {
@@ -36,7 +36,7 @@ func insertPlayer(db *sql.DB, id string) {
 }
 
 func getPlayers(db *sql.DB) string {
-	getPlayersSQL := `SELECT playerId FROM player;`
+	getPlayersSQL := `SELECT playerid FROM player;`
 	rows, err := db.Query(getPlayersSQL)
 	if err != nil {
 		log.Fatalln(err)
