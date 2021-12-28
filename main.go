@@ -1,8 +1,9 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v4"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net/http"
@@ -13,52 +14,31 @@ import (
 )
 
 func main() {
-	db := createDB()
-	createTable(db)
-	setUpRouter(db)
+	conn := createConn()
+	setUpRouter(conn)
 }
 
-func createDB() *sql.DB {
-	if _, err := os.Stat("dota-rank-performance.db"); os.IsNotExist(err) {
-		file, err := os.Create("dota-rank-performance.db")
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		file.Close()
-	}
-
-	db, _ := sql.Open("sqlite3", "dota-rank-performance.db")
-	return db
-}
-
-func createTable(db *sql.DB) {
-	createPlayerTableSQL := `
-	CREATE TABLE IF NOT EXISTS player (
-		"idPlayer" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"createdDate" DATE
-	);`
-
-	stmt, err := db.Prepare(createPlayerTableSQL)
+func createConn() *pgx.Conn {
+	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalln(err)
 	}
-	stmt.Exec()
+	return conn
 }
 
-func insertPlayer(db *sql.DB, id string) {
-	//insertPlayerSQL := `INSERT INTO player(idPlayer, createdDate) VALUES (?, ?);`
-	insertPlayerSQL := `INSERT INTO player(idPlayer, createdDate) VALUES (?, ?);`
-	stmt, err := db.Prepare(insertPlayerSQL)
+func insertPlayer(conn *pgx.Conn, id string) {
+	insertPlayerSQL := "INSERT INTO player(playerId, createdDate) VALUES($1, $2)"
+	_, err := conn.Exec(context.Background(), insertPlayerSQL, id, time.Now())
+
 	if err != nil {
 		log.Fatalln(err)
 	}
-	stmt.Exec(id, time.Now())
 	log.Print("Inserted player id " + id)
 }
 
-func getPlayers(db *sql.DB) string {
-	getPlayersSQL := `SELECT idPlayer FROM player;`
-	rows, err := db.Query(getPlayersSQL)
+func getPlayers(conn *pgx.Conn) string {
+	getPlayersSQL := `SELECT playerId FROM player;`
+	rows, err := conn.Query(context.Background(), getPlayersSQL)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -66,13 +46,12 @@ func getPlayers(db *sql.DB) string {
 	var ids []string
 	for rows.Next() {
 		rows.Scan(&id)
-		log.Print(id)
 		ids = append(ids, strconv.Itoa(id))
 	}
 	return strings.Join(ids, " ")
 }
 
-func setUpRouter(db *sql.DB) {
+func setUpRouter(conn *pgx.Conn) {
 	port := os.Getenv("PORT")
 
 	if port == "" {
@@ -88,23 +67,22 @@ func setUpRouter(db *sql.DB) {
 		c.HTML(http.StatusOK, "index.tmpl.html", nil)
 	})
 
-	router.GET("/get-players", getPlayersHandler(db))
+	router.GET("/get-players", getPlayersHandler(conn))
 
-	router.POST("/refresh-games", postRefreshGamesHandler(db))
+	router.POST("/refresh-games", postRefreshGamesHandler(conn))
 
 	router.Run(":" + port)
 }
 
-func getPlayersHandler(db *sql.DB) gin.HandlerFunc {
+func getPlayersHandler(conn *pgx.Conn) gin.HandlerFunc {
 	fn := func(c *gin.Context) {
-		players := getPlayers(db)
-		log.Print(players)
+		players := getPlayers(conn)
 		c.String(http.StatusOK, players)
 	}
-	return gin.HandlerFunc(fn)
+	return fn
 }
 
-func postRefreshGamesHandler(db *sql.DB) gin.HandlerFunc {
+func postRefreshGamesHandler(conn *pgx.Conn) gin.HandlerFunc {
 	fn := func(c *gin.Context) {
 
 		type RefreshGameBody struct {
@@ -117,7 +95,7 @@ func postRefreshGamesHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		id := requestBody.PlayerId
 
-		insertPlayer(db, id)
+		insertPlayer(conn, id)
 
 		/*resp, err := http.Get("https://api.opendota.com/api/players/" + id + "/peers")
 		if err != nil {
@@ -134,5 +112,5 @@ func postRefreshGamesHandler(db *sql.DB) gin.HandlerFunc {
 		c.String(http.StatusOK, string("Refreshed player "+id))
 
 	}
-	return gin.HandlerFunc(fn)
+	return fn
 }
