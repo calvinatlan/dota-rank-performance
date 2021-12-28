@@ -1,9 +1,9 @@
 package main
 
 import (
-	"context"
+	"database/sql"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v4"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
@@ -13,21 +13,21 @@ import (
 )
 
 func main() {
-	conn := createConn()
-	setUpRouter(conn)
+	db := createConn()
+	setUpRouter(db)
 }
 
-func createConn() *pgx.Conn {
-	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+func createConn() *sql.DB {
+	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalln(err)
 	}
-	return conn
+	return db
 }
 
-func insertPlayer(conn *pgx.Conn, id string) {
+func insertPlayer(db *sql.DB, id string) {
 	insertPlayerSQL := "INSERT INTO player(playerId, createdDate) VALUES($1, $2)"
-	_, err := conn.Exec(context.Background(), insertPlayerSQL, id, time.Now())
+	_, err := db.Exec(insertPlayerSQL, id, time.Now())
 
 	if err != nil {
 		log.Fatalln(err)
@@ -35,9 +35,9 @@ func insertPlayer(conn *pgx.Conn, id string) {
 	log.Print("Inserted player id " + id)
 }
 
-func getPlayers(conn *pgx.Conn) string {
+func getPlayers(db *sql.DB) string {
 	getPlayersSQL := `SELECT playerId FROM player;`
-	rows, err := conn.Query(context.Background(), getPlayersSQL)
+	rows, err := db.Query(getPlayersSQL)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -50,7 +50,7 @@ func getPlayers(conn *pgx.Conn) string {
 	return strings.Join(ids, " ")
 }
 
-func setUpRouter(conn *pgx.Conn) {
+func setUpRouter(db *sql.DB) {
 	port := os.Getenv("PORT")
 
 	if port == "" {
@@ -66,22 +66,22 @@ func setUpRouter(conn *pgx.Conn) {
 		c.HTML(http.StatusOK, "index.tmpl.html", nil)
 	})
 
-	router.GET("/get-players", getPlayersHandler(conn))
+	router.GET("/get-players", getPlayersHandler(db))
 
-	router.POST("/refresh-games", postRefreshGamesHandler(conn))
+	router.POST("/refresh-games", postRefreshGamesHandler(db))
 
 	router.Run(":" + port)
 }
 
-func getPlayersHandler(conn *pgx.Conn) gin.HandlerFunc {
+func getPlayersHandler(db *sql.DB) gin.HandlerFunc {
 	fn := func(c *gin.Context) {
-		players := getPlayers(conn)
+		players := getPlayers(db)
 		c.String(http.StatusOK, players)
 	}
 	return fn
 }
 
-func postRefreshGamesHandler(conn *pgx.Conn) gin.HandlerFunc {
+func postRefreshGamesHandler(db *sql.DB) gin.HandlerFunc {
 	fn := func(c *gin.Context) {
 
 		type RefreshGameBody struct {
@@ -94,7 +94,7 @@ func postRefreshGamesHandler(conn *pgx.Conn) gin.HandlerFunc {
 		}
 		id := requestBody.PlayerId
 
-		insertPlayer(conn, id)
+		insertPlayer(db, id)
 
 		/*resp, err := http.Get("https://api.opendota.com/api/players/" + id + "/peers")
 		if err != nil {
