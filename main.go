@@ -50,6 +50,50 @@ func getPlayers(db *sql.DB) string {
 	return strings.Join(ids, " ")
 }
 
+func checkPlayerExists(db *sql.DB, id string) bool {
+	queryPlayer := `SELECT playerid FROM player WHERE playerid = $1`
+	rows, _ := db.Query(queryPlayer, id)
+	cols, _ := rows.Columns()
+	if len(cols) == 0 {
+		return false
+	}
+	return true
+}
+
+func updatePlayer(db *sql.DB, id string) {
+	queryPlayer := `SELECT lastupdated FROM player WHERE playerid = $1`
+	rows, _ := db.Query(queryPlayer, id)
+	var lastUpdated time.Time
+	rows.Next()
+	rows.Scan(&lastUpdated)
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	var daysBack int
+	if lastUpdated.Before(thirtyDaysAgo) {
+		daysBack = 30
+	} else {
+		daysBack = int((time.Now().Sub(lastUpdated).Hours())/24) + 1
+	}
+	log.Print(lastUpdated)
+	strDaysBack := strconv.Itoa(daysBack)
+	log.Print("Days back: " + strDaysBack)
+	/*
+		resp, err := http.Get("https://api.opendota.com/api/players/" + id + "/matches?significant=1&date=" + strDaysBack)
+		if err != nil {
+			log.Fatalln("Could not call opendota api for this player")
+			log.Fatalln(err)
+		}
+		type Match struct {
+			StartTime int64 `json:"start_time"`
+			MatchId   int `json:"match_id"`
+		}
+		var responseJson []Match
+		byteValue, _ := ioutil.ReadAll(resp.Body)
+		json.Unmarshal(byteValue, &responseJson)
+	*/
+	queryUpdateLU := `UPDATE player SET lastupdated = $1 WHERE playerid = $2`
+	db.Exec(queryUpdateLU, time.Now(), id)
+}
+
 func setUpRouter(db *sql.DB) {
 	port := os.Getenv("PORT")
 
@@ -94,7 +138,11 @@ func postRefreshGamesHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		id := requestBody.PlayerId
 
-		insertPlayer(db, id)
+		playerExists := checkPlayerExists(db, id)
+		if !playerExists {
+			insertPlayer(db, id)
+		}
+		updatePlayer(db, id)
 
 		/*resp, err := http.Get("https://api.opendota.com/api/players/" + id + "/peers")
 		if err != nil {
